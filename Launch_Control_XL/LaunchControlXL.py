@@ -1,9 +1,3 @@
-# uncompyle6 version 3.9.1
-# Python bytecode version base 3.7.0 (3394)
-# Decompiled from: Python 3.12.2 (main, Feb  6 2024, 20:19:44) [Clang 15.0.0 (clang-1500.1.0.2.5)]
-# Embedded file name: output/Live/mac_universal_64_static/Release/python-bundle/MIDI Remote Scripts/Launch_Control_XL/LaunchControlXL.py
-# Compiled at: 2024-03-09 01:30:22
-# Size of source mod 2**32: 9674 bytes
 from __future__ import absolute_import, print_function, unicode_literals
 from builtins import chr, map, range
 from functools import partial
@@ -24,6 +18,10 @@ from .ButtonElement import ButtonElement
 from .DeviceComponent import DeviceComponent, DeviceModeComponent
 from .MixerComponent import MixerComponent
 from .SkinDefault import make_biled_skin, make_default_skin
+
+# ← Nieuw: importeer de DJ Filter koppeling
+from .TrackMacroComponent import TrackMacroComponent
+
 NUM_TRACKS = 8
 LIVE_CHANNEL = 8
 PREFIX_TEMPLATE_SYSEX = (240, 0, 32, 41, 2, 17, 119)
@@ -52,6 +50,17 @@ class LaunchControlXL(IdentifiableControlSurface):
             device = self._create_device()
             session.set_mixer(mixer)
             self.set_device_component(device)
+
+            # ← Nieuw: koppel pan-encoders aan Auto Filter Frequency
+            encoders_list = [
+                self._pan_device_encoders.get_button(0, i)
+                for i in range(NUM_TRACKS)
+            ]
+            self._macro_component = TrackMacroComponent(
+                mixer=mixer,
+                encoders=encoders_list,
+                song=self.song()
+            )
 
     def _create_controls(self):
 
@@ -106,7 +115,7 @@ class LaunchControlXL(IdentifiableControlSurface):
           send_controls=(self._send_encoders),
           next_sends_button=(self._down_button),
           prev_sends_button=(self._up_button),
-          pan_controls=(self._pan_device_encoders),
+          # pan_controls verwijderd — encoders worden gebruikt voor DJ Filter
           volume_controls=(self._volume_faders),
           send_lights=(self._send_encoder_lights),
           pan_lights=(self._pan_device_encoder_lights))
@@ -138,6 +147,9 @@ class LaunchControlXL(IdentifiableControlSurface):
     def _on_session_offset_changed(self):
         session = self._on_session_offset_changed.subject
         self._show_controlled_tracks_message(session)
+        # ← Nieuw: hermap encoders na bank-scroll
+        if hasattr(self, '_macro_component'):
+            self._macro_component.on_track_offset_changed()
 
     def _create_device(self):
         device = DeviceComponent(name="Device_Component",
@@ -188,3 +200,9 @@ class LaunchControlXL(IdentifiableControlSurface):
                     self.update()
         else:
             super(LaunchControlXL, self).handle_sysex(midi_bytes)
+
+    # ← Nieuw: netjes opruimen bij disconnect
+    def disconnect(self):
+        if hasattr(self, '_macro_component'):
+            self._macro_component.disconnect()
+        super(LaunchControlXL, self).disconnect()
